@@ -1,0 +1,141 @@
+---
+title: "Assignment 4"
+author: "Venkata Naga Siddartha Gutha"
+output: pdf_document
+---
+Loading libraries and data set
+```{r}
+library(tidyverse)
+library(factoextra)
+pharmaceutical_data<-read.csv("C:/Users/sidda/Downloads/Pharmaceuticals.csv")
+pharmaceutical_data<-na.omit(pharmaceutical_data)
+
+```
+
+Using the numerical variables (1 to 9) to cluster the 21 firms.
+```{r}
+row.names(pharmaceutical_data)<-pharmaceutical_data[,1]
+Clustering_dataset<-pharmaceutical_data[,3:11]
+```
+Scaling the data
+```{r}
+set.seed(143)
+Scaled_data<-scale(Clustering_dataset)
+
+```
+
+Performing Kmeans for random K values
+```{r}
+set.seed(143)
+kmeans_2<-kmeans(Scaled_data,centers = 2, nstart = 15)
+kmeans_4<-kmeans(Scaled_data,centers = 4, nstart = 15)
+kmeans_8<-kmeans(Scaled_data,centers = 8, nstart = 15)
+
+plot_kmeans_2<-fviz_cluster(kmeans_2,data = Scaled_data) + ggtitle("K=2")
+plot_kmeans_4<-fviz_cluster(kmeans_4,data = Scaled_data) + ggtitle("K=4")
+plot_kmeans_8<-fviz_cluster(kmeans_8,data = Scaled_data) + ggtitle("K=8")
+
+plot_kmeans_2
+plot_kmeans_4
+plot_kmeans_8
+
+
+```
+
+Using WSS and Silhouette to find best K suitable for clustering
+
+```{r}
+k_wss<-fviz_nbclust(Scaled_data,kmeans,method="wss")
+k_silhouette<-fviz_nbclust(Scaled_data,kmeans,method="silhouette")
+k_wss
+k_silhouette
+distance<-dist(Scaled_data,metho='euclidean')
+fviz_dist(distance)
+```
+from WSS k is 2 and from silhouette k is 5. we are choosing 5 as this ensures that within sum of squires is low along with good separation within clusters
+
+Performing Kmeans for suitable k 
+```{r}
+set.seed(143)
+kmeans_5<-kmeans(Scaled_data,centers = 5, nstart = 10)
+kmeans_5
+plot_kmeans_5<-fviz_cluster(kmeans_5,data = Scaled_data) + ggtitle("K=5")
+plot_kmeans_5
+
+Clustering_dataset_1<-Clustering_dataset%>%
+  mutate(Cluster_no=kmeans_5$cluster)%>%
+  group_by(Cluster_no)%>%summarise_all('mean')
+Clustering_dataset_1
+
+```
+Companies are grouped into following clusters:
+
+
+Cluster_1= ABT,AHM,AZN,BMY,LLY,NVS,SGP,WYE
+
+
+Cluster_2= BAY,CHTT,IVX
+
+
+Cluster_3=AVE,ELN,MRX,WPI
+
+
+Cluster_4=AGN,PHA
+
+
+Cluster_5=GSK,JNJ,MRK,PFE
+
+
+
+
+From the clusters formed it can be understood that 
+
+
+1. Cluster_1 has group of companies with moderate return on equity and return on investment
+
+
+2. Cluster_2 contains companies with very bad ROA,ROE, market capitalization and asset turnover. this implies that these companies are very risky
+
+
+3. Cluster_3 has group companies similar to cluster_2 but with little less risk involved
+
+
+4. Cluster_4 companies has very good PE_ratio but very poor ROA,ROE which is more riskier that cluster_2
+
+
+5. Cluster_5 has companies with very good market capitalization, ROE and ROA
+
+
+```{r}
+Clustering_datase_2<- pharmaceutical_data[,12:14] %>% mutate(Clusters=kmeans_5$cluster)
+ggplot(Clustering_datase_2, mapping = aes(factor(Clusters), fill =Median_Recommendation))+geom_bar(position='dodge')+labs(x ='Clusters')
+ggplot(Clustering_datase_2, mapping = aes(factor(Clusters),fill = Location))+geom_bar(position = 'dodge')+labs(x ='Clusters')
+ggplot(Clustering_datase_2, mapping = aes(factor(Clusters),fill = Exchange))+geom_bar(position = 'dodge')+labs(x ='Clusters')
+
+
+```
+
+It can be seen that there is a pattern in clusters  and the variable Median Recommendation. Like the 2nd cluster suggests between hold and moderate buy,3rd cluster suggests to moderate buy to moderate sell.
+From the location graph it can be noticed that most of the pharmaceutical companies are US based and there is no much pattern in it.
+There is no noticeable pattern between clusters and exchange except the fact that majority of companies are listed on NYSE.
+
+
+Naming clusters:
+
+
+[It is done based net Market capitalization(size) and Return on Assets(money)]
+
+
+Cluster 1: Large-Thousands
+
+
+Cluster 2: Extra Small-Penny
+
+
+Cluster 3: Small- Dollars
+
+
+Cluster 4: Medium-Hundreds
+
+
+Cluster 5: Extra Large-Millions 
