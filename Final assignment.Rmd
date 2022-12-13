@@ -1,0 +1,499 @@
+---
+title: "Untitled"
+author: "Venkata Naga Siddartha Gutha"
+
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r}
+
+library(tidyverse)
+library(factoextra)
+library(class)
+library(dplyr)
+library(caret)
+```
+
+Loading data
+```{r}
+project<-read.csv("C:/Users/sidda/Downloads/fuel_receipts_costs_eia923.csv")
+
+```
+
+```{r}
+
+data<-project[ , c(10,15,16,17,18,20)]
+summary(data)
+map(data,~sum(is.na(.)))
+nrow(data)
+```
+I'm choosing fuel_type_code, fuel_received_units, fuel_mmbtu_per_unit, sulfur_content_pct, ash_content_pct, fuel_cost_per_mmbtu from the dataset to do my analysis.
+
+
+
+Data sampling
+
+```{r}
+set.seed(5555)
+sample<-createDataPartition(data$fuel_mmbtu_per_unit,p=0.02,list=FALSE)
+sample_dataset<-data[sample,]
+ncol(sample_dataset)
+nrow(sample_dataset)
+
+
+
+```
+
+I'm considering 2% of the data provided for my analysis.
+
+
+
+Imputing missing values
+
+```{r}
+
+sample_dataset$fuel_cost_per_mmbtu [is.na(sample_dataset$fuel_cost_per_mmbtu )]<-
+  median(sample_dataset$fuel_cost_per_mmbtu , na.rm = T)
+
+map(sample_dataset,~sum(is.na(.)))
+```
+
+As there are significant missing values in fuel_cost_per_mmbtu, I used median value of the data provide to impute those missing values.
+
+
+
+
+Dummy variables
+```{r}
+dummymodel<-dummyVars("~fuel_type_code_pudl",data = sample_dataset)
+fueldummy<-data.frame(predict(dummymodel,sample_dataset))
+head(fueldummy)
+
+
+```
+
+The variable fuel_type_code_pudl is a categorical variable with three different types in it namely coal, gas and oil. I have converted the column into three different coulmns of numerical variable using dummy variable.
+
+
+
+
+Replacing fuel_type_code_pudl with dummy
+
+```{r}
+
+sample_dataset_dummy<-sample_dataset[,-1]%>%cbind(fueldummy)
+head(sample_dataset_dummy)
+
+
+
+```
+
+
+
+
+
+
+Dividing the sample dataset into training and testing set
+```{r}
+set.seed(5555)
+partition<-createDataPartition(sample_dataset_dummy$fuel_mmbtu_per_unit,p=0.75,list = FALSE)
+train_set<-sample_dataset_dummy[partition,]
+test_set<-sample_dataset_dummy[-partition,]
+nrow(train_set)
+nrow(test_set)
+summary(train_set)
+
+
+```
+
+Data set is partitioned into two parts one is to train the model which consists of 75% of the data and other the other is to test the perfomance of the model and this consists of remaining 25% of the data.
+```{r}
+
+normalization_values<-preProcess(train_set ,method = c('center','scale'))
+
+trainset_norm<-predict(normalization_values,train_set)
+
+testset_norm<-predict(normalization_values,test_set)
+```
+
+Normalizing both the sets using normalization values of training set.
+
+
+
+
+
+Using WSS and Silhouette methods are used to get an idea of which K to use for clustering the data
+```{r}
+
+
+summary(trainset_norm)
+
+
+
+k_wss<-fviz_nbclust(trainset_norm,kmeans,method="wss")
+
+
+
+k_wss
+
+k_silhouette<-fviz_nbclust(trainset_norm,kmeans,method="silhouette")
+
+k_silhouette
+```
+From the above results it can be seen that silhouette method says that K value of 8 is the best K to cluster whereas in WSS graph we can notice an elbow bend at K value of 2. I am choosing K value of 3 to cluster the data as it has produced clusters with clear gap between each other. I'm not choosing K=8 because 8 groups will be difficult to analyse and to find insights. So, considering the goal of this project I'm choosing K=3 for clustering the data.
+
+
+
+
+
+
+Clustering the data using Kmeans with K=3
+
+```{r}
+set.seed(5555)
+
+kmeans_3<-kmeans(trainset_norm,centers = 3, nstart = 25)
+
+plot_kmeans_3<-fviz_cluster(kmeans_3,data = trainset_norm)
+
+plot_kmeans_3
+
+```
+The above graph shows the clusters formed using K-Means method.
+
+
+
+
+Adding cluster info to training set
+```{r}
+train_set$cluster<-kmeans_3$cluster
+head(train_set)
+```
+
+Let us explore the clusters formed and try to understand how each attribute is behaving in different cluster.
+
+```{r}
+train_set%>%group_by(cluster)%>%
+  summarize(avg_units=mean(fuel_received_units),
+            avg_cost=mean(fuel_cost_per_mmbtu),
+            avg_mmbtu=mean(fuel_mmbtu_per_unit))
+```
+The above output shows that average fuel cost is least in Cluster 2 and highest in Cluster . Average heat produced is highest in cluster 2 and least in cluster 1
+```{r}
+
+```
+
+
+Adding the cluster information to original data without dummy variable and let us use this for futher analysis.
+```{r}
+
+
+
+set.seed(5555)
+partition_2<-createDataPartition(sample_dataset$fuel_mmbtu_per_unit,p=0.75,list = FALSE)
+final_set<-sample_dataset[partition,]
+
+
+nrow(final_set)
+
+
+final_set$cluster<-kmeans_3$cluster
+
+cluster_fuel<-final_set%>%group_by(cluster)
+
+head(final_set)
+```
+
+
+Analysing type of fuel in each cluster
+```{r}
+
+
+
+library(ggplot2)
+
+ggplot(final_set) +
+ aes(x = fuel_type_code_pudl, fill = cluster, colour = cluster, group = cluster) +
+ geom_bar() +
+ scale_fill_viridis_c(option = "plasma", direction = 1) +
+ scale_color_viridis_c(option = "plasma", 
+ direction = 1) +
+ theme_minimal()
+```
+From the above graph it can be seen that cluster 1 represented in blue colour has fuel type gas in it. Cluster 2 represented in purple has fuel coal whereas cluster 3 in yellow colour has oil 
+
+
+
+
+
+Heat produced in each cluster
+```{r}
+
+#fuel type vs mmbtu -grouped by cluster
+
+library(ggplot2)
+
+ggplot(final_set) +
+ aes(x = fuel_type_code_pudl, y = fuel_mmbtu_per_unit, colour = cluster) +
+ geom_col(fill = "#112446") +
+ scale_color_distiller(palette = "Dark2", direction = 1) +
+ theme_minimal() +
+ facet_wrap(vars(cluster))
+
+```
+From the above results it is evident that maximum heat is produced by cluster 2 which as coal as fuel. Cluster 1 and 3 has produced almost same level of heat.
+
+
+
+Average cost incurred to average amount of heat in each cluster
+```{r}
+
+final_set2<-train_set%>%group_by(cluster)%>%
+  summarize(avg_units=mean(fuel_received_units),
+            avg_cost=mean(fuel_cost_per_mmbtu),
+            avg_mmbtu=mean(fuel_mmbtu_per_unit))
+
+
+
+
+library(ggplot2)
+
+ggplot(final_set2) +
+ aes(x = avg_cost, y = avg_mmbtu, fill = cluster, colour = cluster, size = cluster) +
+ geom_point(shape = "circle") +
+ scale_fill_distiller(palette = "Dark2", direction = 1) +
+ scale_color_distiller(palette = "Dark2", 
+ direction = 1) +
+ theme_minimal()
+```
+The graph shows that cluster 2 has produced highest amount heat at very least cost. Cluster 3 has produced very less heat compared to cluster 1 but at a very high cost. 
+
+
+
+
+
+Examining Sulphur content in each cluster
+
+```{r}
+
+final_set3<-final_set%>%group_by(cluster)%>%
+  summarize(avg_sulfur=mean(sulfur_content_pct))
+
+
+
+library(ggplot2)
+
+ggplot(final_set3) +
+ aes(x = cluster, y = avg_sulfur) +
+ geom_point(shape = "circle", size = 3, colour = "#0A5CEF") +
+ theme_minimal()
+
+```
+
+
+It is evident that sulphur content is very high in cluster 2. whereas Cluster 3 has very minimal amount of suphur content and cluster 1 has no sulphur content in it.
+
+
+
+
+
+Ash content in each cluster
+
+```{r}
+final_set4<-final_set%>%group_by(cluster)%>%
+  summarize(avg_ash=mean(ash_content_pct))
+
+
+
+library(ggplot2)
+
+ggplot(final_set4) +
+ aes(x = cluster, y = avg_ash) +
+ geom_point(shape = "circle", size = 3, colour = "#CB0808") +
+ theme_minimal()
+
+```
+It can be seen that Ash content is very high in cluster 2. whereas Cluster 3 and cluster 1 has no Ash content in it.
+
+
+
+
+Total fuel received by each cluster
+```{r}
+final_set5<-final_set%>%group_by(cluster)%>%mutate(total_fuel=sum(fuel_received_units))
+
+
+
+
+library(ggplot2)
+
+ggplot(final_set5) +
+ aes(x = cluster, y = total_fuel, colour = fuel_type_code_pudl) +
+ geom_point(shape = "circle", 
+ size = 3) +
+ scale_color_hue(direction = 1) +
+ theme_minimal()
+```
+
+It can be clearly seen that Cluster one of gas has received highest number of fuel units compared to other clusters.
+
+
+
+extra credit questions
+
+
+
+I tried to answer the extra questions but i encountered multiple errors
+
+
+
+so im just inserting the code i tried, So that professor can evaluate the logic i tried to get result
+
+
+
+Use multiple-linear regression to determine the best set of variables to predict fuel_cost_per_mmbtu.
+
+
+set.seed(555)
+
+
+
+project_2<-read.csv("C:/Users/sidda/Downloads/fuel_receipts_costs_eia923.csv")
+
+
+
+ncol(project_2)
+
+
+
+set.seed(5555)
+
+
+
+sample_55<-createDataPartition(project_2$rowid,p=0.02,list=FALSE)
+
+
+data_bestvariables<-project_2[sample_55,]
+
+
+
+ncol(data_bestvariables)
+
+
+
+
+
+nrow(data_bestvariables)
+
+
+
+
+
+best_variablemodel<-glm(fuel_cost_per_mmbtu~.,data = data_bestvariables)
+
+
+
+
+
+anova(best_variablemodel)
+
+
+
+from the results we can find significance of variables with p vlaues. smaller the value of p higher the significance of variable in predicting fuel price
+
+
+
+Regression model
+
+
+
+set.seed(5555)
+
+
+
+partition_3<-createDataPartition(data_bestvariables$rowid,p=0.75,list = FALSE)
+
+
+
+
+train_set_3<-sample_dataset_dummy[partition_3,]
+
+
+
+
+test_set_3<-sample_dataset_dummy[-partition_3,]
+
+
+
+regression model
+
+
+
+set.seed(5555)
+
+
+
+
+model_1<-glm(fuel_cost_per_mmbtu~.,data = train_set_3)
+
+
+
+predicted_price_1<-predict(model_1,test_set_3)
+
+
+
+consusionmatrix_1<-confusionMatrix(as.factor(predicted_price_1),as.factor(test_set_3$fuel_cost_per_mmbtu))
+
+
+
+from the above output we can get the accuracy of the model
+
+
+
+regression model with cluster info:
+
+
+
+set.seed(5555)
+
+
+
+kmeans_3<-kmeans(trainset_norm,centers = 3, nstart = 25)
+
+
+
+train_set_3_c<-train_set_3
+
+
+
+train_set_3_c(of)cluster<-kmeans_3_c(of)cluster
+
+
+
+(of) is used in place of $
+
+
+
+test_set_3_c<-test_set_3
+
+
+
+test_set_3_c(of)cluster<-kmeans_3_c(of)cluster
+
+
+
+model_2<-glm(fuel_cost_per_mmbtu~.,data = train_set_3)
+
+
+
+predicted_price_2<-predict(model_2,test_set_3_c)
+
+
+
+consusionmatrix_1<-confusionMatrix(as.factor(predicted_price_2),as.factor(test_set_3_c$fuel_cost_per_mmbtu))
+
+
+
+the above code gives accuracy after adding the cluster information. comparing both we can get to know if accuracy is increasedd or not.
+
